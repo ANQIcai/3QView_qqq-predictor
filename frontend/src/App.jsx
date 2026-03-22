@@ -633,14 +633,21 @@ export default function App() {
   const predict = useCallback(async () => {
     setPredicting(true);
     try {
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 180_000);
-      const resp = await fetch(`${API_BASE}/api/predict`, { method: "POST", signal: ctrl.signal });
-      clearTimeout(tid);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutes
+      const resp = await fetch("/api/predict", {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
       const data = await resp.json();
-      setSimulation(data.rounds);
-      setPredictResult(data);
-      setActiveRound(2);
+      if (data.rounds && data.rounds.length === 3) {
+        setSimulation(data.rounds);
+        setPredictResult(data);
+        setActiveRound(2);
+      } else {
+        console.error("Invalid prediction response:", data);
+      }
     } catch (e) {
       console.error("Prediction failed:", e);
     }

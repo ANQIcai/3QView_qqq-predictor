@@ -82,17 +82,18 @@ def _serialize_ohlcv(df) -> list:
 
 
 def _serialize_forecast(f) -> dict:
-    """Serialize a ForecastResult including agent identity fields."""
+    """Serialize a ForecastResult including agent identity fields.
+    Explicit float/str casts prevent numpy type JSON serialization errors."""
     return {
-        "agent_name": f.agent_name,
-        "round_num": f.round_num,
-        "direction": f.direction,
-        "confidence": f.confidence,
-        "target_low": f.target_low,
-        "target_high": f.target_high,
-        "reasoning": f.reasoning,
-        "status": f.status,
-        "revised_from": f.revised_from,
+        "agent_name": str(f.agent_name),
+        "round_num": int(f.round_num),
+        "direction": str(f.direction),
+        "confidence": float(f.confidence),
+        "target_low": float(f.target_low),
+        "target_high": float(f.target_high),
+        "reasoning": str(f.reasoning),
+        "status": str(f.status),
+        "revised_from": str(f.revised_from) if f.revised_from else None,
     }
 
 
@@ -230,8 +231,11 @@ def predict():
     """Run the full 5-agent, 3-round debate simulation.
 
     WARNING: This endpoint blocks for ~60-120 seconds (15 Anthropic API calls).
-    React callers MUST set AbortController timeout >= 180 seconds.
+    React callers MUST set AbortController timeout >= 120 seconds.
+    Returns {error, rounds:[], consensus:{}} on failure instead of raising,
+    so the client gets a parseable JSON body rather than a 500.
     """
+    import traceback
     try:
         df_5y = data_mod.fetch_ohlcv_5y()
         df_1y = data_mod.fetch_ohlcv("QQQ", period="1y")
@@ -271,4 +275,5 @@ def predict():
             "scenario": scenario,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        return {"error": str(e), "rounds": [], "consensus": {}}
