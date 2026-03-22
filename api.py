@@ -245,8 +245,10 @@ def predict():
         regime = ana_mod.detect_regime(df_1y, vix=macro.get("vix"))
 
         articles = news_mod.fetch_all_news()
-        digest = news_mod.generate_market_digest(articles) if articles else {}
-        scenario = news_mod.build_scenario_from_news(digest, articles, regime)
+        # Skip generate_market_digest here — it's a full Claude call (~10-15s) and
+        # build_scenario_from_news falls back to top article headlines when digest={}.
+        # The digest Claude call is reserved for the /api/news UI endpoint.
+        scenario = news_mod.build_scenario_from_news({}, articles, regime)
 
         seed = {
             "ticker": "QQQ",

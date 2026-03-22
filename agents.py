@@ -12,7 +12,10 @@ from consensus import aggregate_forecasts
 
 client = anthropic.Anthropic()
 MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 600
+# Rounds 1 & 2 get fewer tokens (faster, still sufficient for 2-3 sentence reasoning).
+# Round 3 gets the full budget for final committed forecast.
+MAX_TOKENS_R1R2 = 500
+MAX_TOKENS_R3 = 600
 
 _KNOWLEDGE_DIR = Path(__file__).parent / "agents_knowledge"
 _KNOWLEDGE_FILES = {
@@ -301,7 +304,7 @@ def _call_agent(
                 )
                 response = client.messages.create(
                     model=MODEL,
-                    max_tokens=MAX_TOKENS,
+                    max_tokens=MAX_TOKENS_R3 if round_num == 3 else MAX_TOKENS_R1R2,
                     system=system_prompt,
                     tools=[FORECAST_TOOL],
                     tool_choice={"type": "tool", "name": "submit_forecast"},
@@ -337,7 +340,7 @@ def _call_agent(
                         status="ok",
                     )
             except anthropic.RateLimitError:
-                wait = 5 * (2 ** attempt)  # 5s, 10s, 20s, 40s
+                wait = 2 * (2 ** attempt)  # 2s, 4s, 8s
                 if attempt < 3:
                     time.sleep(wait)
                     continue
@@ -384,8 +387,8 @@ def run_simulation(seed: dict) -> SimulationResult:
     def run_round(round_num: int, prior_messages: list) -> list[ForecastResult]:
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = {
-                name: executor.submit(_call_agent, name, seed, prior_messages, round_num, i * 0.3)
-                for i, name in enumerate(agent_names)
+                name: executor.submit(_call_agent, name, seed, prior_messages, round_num, i * 0.1)
+                for i, name in enumerate(agent_names)  # 0.1s stagger avoids burst rate limits
             }
             return [futures[name].result() for name in agent_names]
 

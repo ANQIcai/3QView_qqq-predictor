@@ -634,7 +634,7 @@ export default function App() {
     setPredicting(true);
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutes
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes
       const resp = await fetch("/api/predict", {
         method: "POST",
         signal: controller.signal,
