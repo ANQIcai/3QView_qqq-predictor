@@ -188,12 +188,20 @@ def build_agent_context(agent_name: str, seed: dict) -> str:
         lines.append(f"## Market Regime\n{seed.get('regime', 'unknown')}\n")
 
     if "analogues" in fields and seed.get("analogues"):
-        lines.append("## Historical Analogues")
+        lines.append("## Historical Analogues (statistically similar past conditions)")
         for a in seed["analogues"]:
-            sign = "+" if a.return_5d > 0 else ""
-            lines.append(
-                f"- {a.date}: {a.event_label} → {sign}{a.return_5d:.1f}% (5d, regime: {a.regime})"
-            )
+            sign5 = "+" if a.return_5d > 0 else ""
+            line = f"- {a.date}: {a.event_label} → 5d: {sign5}{a.return_5d:.1f}%"
+            if hasattr(a, "return_1d"):
+                s1 = "+" if a.return_1d > 0 else ""
+                s10 = "+" if a.return_10d > 0 else ""
+                s20 = "+" if a.return_20d > 0 else ""
+                line += f" | 1d: {s1}{a.return_1d:.1f}% 10d: {s10}{a.return_10d:.1f}% 20d: {s20}{a.return_20d:.1f}%"
+            if hasattr(a, "similarity_score"):
+                line += f" [similarity: {a.similarity_score:.0%}]"
+            if hasattr(a, "regime"):
+                line += f" (regime: {a.regime})"
+            lines.append(line)
         lines.append("")
 
     if "price_table" in fields and seed.get("price_history") is not None:
@@ -286,6 +294,11 @@ def _call_agent(
                 knowledge = _AGENT_KNOWLEDGE.get(agent_name, "")
                 base_system = AGENT_PERSONAS[agent_name]["system"]
                 system_prompt = f"{knowledge}\n\n{base_system}" if knowledge else base_system
+                system_prompt += (
+                    " Reference the historical analogues provided when forming your view. "
+                    "Explain whether the current situation is more similar to the bullish or "
+                    "bearish analogues, and why this time might differ."
+                )
                 response = client.messages.create(
                     model=MODEL,
                     max_tokens=MAX_TOKENS,
