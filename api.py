@@ -10,7 +10,7 @@ Data flow:
       ├── GET /api/news    → articles + digest
       ├── GET /api/calendar → key dates / events
       ├── GET /api/consensus → top-holdings analyst consensus
-      ├── GET /api/analogues → historical analogues (uses 5y OHLCV)
+      ├── GET /api/analogues → statistical similarity match (10y QQQ cache)
       └── POST /api/predict  → full 3-round, 5-agent simulation (~60-120s)
                                 ↓
                             Anthropic API (15 Claude calls)
@@ -194,25 +194,33 @@ def get_consensus():
 
 @app.get("/api/analogues")
 def get_analogues():
-    """Historical analogues matched to current regime. Uses 5-year OHLCV so
-    events back to 2018 are included (1-year df would miss most of them)."""
+    """Statistical similarity matching against 10y QQQ history.
+    10y history is downloaded once and cached for 1 hour in analogues module."""
     try:
-        df_5y = data_mod.fetch_ohlcv_5y()
+        df = data_mod.fetch_ohlcv("QQQ", period="1y")
         macro = data_mod.fetch_macro_context()
-        regime = ana_mod.detect_regime(df_5y, vix=macro.get("vix"))
-        results = ana_mod.find_analogues(df_5y, "", regime)
+        regime = ana_mod.detect_regime(df, vix=macro.get("vix"))
+        result = ana_mod.find_analogues_full(df, "", regime)
         return {
             "analogues": [
                 {
                     "date": a.date,
                     "event": a.event_label,
-                    "regime": a.regime,
+                    "similarity": a.similarity_score,
+                    "return_1d": a.return_1d,
                     "return_5d": a.return_5d,
-                    "keyword_score": a.keyword_score,
+                    "return_10d": a.return_10d,
+                    "return_20d": a.return_20d,
+                    "max_dd": a.max_drawdown_20d,
                 }
-                for a in results
-            ]
+                for a in result.analogues
+            ],
+            "avg_5d": result.avg_5d_return,
+            "win_rate": result.win_rate,
+            "avg_max_dd": result.avg_max_drawdown,
         }
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

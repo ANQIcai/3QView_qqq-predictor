@@ -3,7 +3,12 @@ tests/test_api.py — FastAPI endpoint tests using TestClient.
 
 Coverage:
   - Each endpoint returns 200 with expected top-level keys
-  - /api/analogues uses 5y OHLCV (would return empty list with 1y df)
+  - /api/analogues uses statistical similarity matching (10y QQQ — mocked)
+  - /api/analogues new fields: similarity, return_1d/5d/10d/20d, max_dd
+  - /api/analogues aggregate stats: avg_5d, win_rate, avg_max_dd
+  - Boundary guard: matches within 20 days of end-of-history are skipped
+  - All-zero score fallback: empty AnalogueResult returned gracefully
+  - Backward compat: find_analogues() wrapper returns list[Analogue]
   - /api/news handles 0 articles gracefully
   - /api/predict response includes agent_name and round_num in forecasts
   - /api/predict consensus includes conviction_score and regime_label
@@ -58,26 +63,152 @@ def test_analogues_returns_200_and_list():
     assert isinstance(data["analogues"], list)
 
 
-def test_analogues_uses_5y_data_not_empty():
-    """Analogues should not be empty — they would be with a 1y df since
-    HISTORICAL_EVENTS go back to 2018 and most events fall before 1y window."""
+def test_analogues_have_new_fields():
+    """New endpoint returns similarity, multi-period returns, max_dd. No regime per analogue."""
     r = client.get("/api/analogues")
     assert r.status_code == 200
-    analogues = r.json()["analogues"]
-    assert len(analogues) > 0, (
-        "No analogues returned. /api/analogues may be using 1y df instead of 5y."
-    )
-
-
-def test_analogues_have_required_fields():
-    r = client.get("/api/analogues")
     analogues = r.json()["analogues"]
     if analogues:
         a = analogues[0]
         assert "date" in a
         assert "event" in a
+        assert "similarity" in a
+        assert "return_1d" in a
         assert "return_5d" in a
-        assert "regime" in a
+        assert "return_10d" in a
+        assert "return_20d" in a
+        assert "max_dd" in a
+        # regime is no longer per-analogue (it's in the Analogue object but not serialized)
+        assert "keyword_score" not in a
+
+
+def test_analogues_have_aggregate_stats():
+    """Top-level response includes aggregate stats."""
+    r = client.get("/api/analogues")
+    data = r.json()
+    assert "avg_5d" in data
+    assert "win_rate" in data
+    assert "avg_max_dd" in data
+
+
+def test_analogues_not_empty():
+    """Statistical matching against 10y history should always find matches."""
+    r = client.get("/api/analogues")
+    assert r.status_code == 200
+    analogues = r.json()["analogues"]
+    assert len(analogues) > 0, "No analogues returned — check _get_qqq_history() and scoring."
+
+
+# ── analogues unit tests (boundary, edge cases, backward compat) ──────────────
+
+import numpy as np
+
+def _make_history_df(n_rows: int, seed: int = 42) -> "pd.DataFrame":
+    """Build a synthetic QQQ-like OHLCV DataFrame for unit tests."""
+    import pandas as pd
+    rng = np.random.default_rng(seed)
+    dates = pd.bdate_range("2015-01-01", periods=n_rows)
+    close = 300 + np.cumsum(rng.normal(0, 2, n_rows))
+    close = np.maximum(close, 1.0)
+    df = pd.DataFrame({
+        "Open": close * 0.999,
+        "High": close * 1.005,
+        "Low": close * 0.995,
+        "Close": close,
+        "Volume": rng.integers(50_000_000, 100_000_000, n_rows).astype(float),
+    }, index=dates)
+    return df
+
+
+@patch("analogues._get_qqq_history")
+def test_boundary_skip_excludes_near_end_matches(mock_hist):
+    """Matches within 20 rows of the end of history must be skipped (no IndexError)."""
+    import pandas as pd
+    from analogues import find_analogues_full
+
+    history = _make_history_df(300)
+    mock_hist.return_value = history
+
+    # Use last 60 rows as "today's" df — conditions should match the end of history
+    df_today = history.tail(60).copy()
+    result = find_analogues_full(df_today, "", "low_vol_uptrend", n=6)
+
+    # All selected analogues must have idx + 20 < len(history) — validated by no IndexError
+    # and all dates must be at least 20 trading days before the last row
+    last_date = history.index[-1]
+    for a in result.analogues:
+        match_date = pd.Timestamp(a.date)
+        gap_days = (last_date - match_date).days
+        assert gap_days >= 20, f"Analogue {a.date} too close to end of history ({gap_days} days)"
+
+
+@patch("analogues._get_qqq_history")
+def test_empty_history_returns_empty_result(mock_hist):
+    """History shorter than 252 rows returns empty AnalogueResult gracefully."""
+    from analogues import find_analogues_full, AnalogueResult
+
+    mock_hist.return_value = _make_history_df(100)
+    df_today = _make_history_df(60)
+    result = find_analogues_full(df_today, "", "low_vol_uptrend", n=6)
+
+    assert isinstance(result, AnalogueResult)
+    assert result.analogues == []
+    assert result.win_rate == 0.0
+    assert result.avg_5d_return == 0.0
+
+
+@patch("analogues._get_qqq_history")
+def test_find_analogues_backward_compat_returns_list(mock_hist):
+    """find_analogues() wrapper must return list[Analogue] for agents.py compatibility."""
+    from analogues import find_analogues, Analogue
+
+    mock_hist.return_value = _make_history_df(600)
+    df_today = _make_history_df(252)
+    results = find_analogues(df_today, "test scenario", "low_vol_uptrend", n=3)
+
+    assert isinstance(results, list)
+    for a in results:
+        assert isinstance(a, Analogue)
+        assert hasattr(a, "date")
+        assert hasattr(a, "event_label")
+        assert hasattr(a, "return_5d")
+        assert hasattr(a, "regime")
+        assert hasattr(a, "similarity_score")
+
+
+@patch("analogues._get_qqq_history")
+def test_anti_clustering_results_are_20_days_apart(mock_hist):
+    """Returned analogues must each be >= 20 trading days apart."""
+    import pandas as pd
+    from analogues import find_analogues_full
+
+    mock_hist.return_value = _make_history_df(1000)
+    df_today = _make_history_df(252)
+    result = find_analogues_full(df_today, "", "low_vol_uptrend", n=6)
+
+    dates = sorted(pd.Timestamp(a.date) for a in result.analogues)
+    for i in range(1, len(dates)):
+        gap = (dates[i] - dates[i - 1]).days
+        assert gap >= 20, f"Analogues {dates[i-1]} and {dates[i]} are only {gap} days apart"
+
+
+@patch("analogues._get_qqq_history")
+def test_analogue_result_stats_are_consistent(mock_hist):
+    """avg_5d_return and win_rate must match the individual analogue values."""
+    from analogues import find_analogues_full
+
+    mock_hist.return_value = _make_history_df(1000)
+    df_today = _make_history_df(252)
+    result = find_analogues_full(df_today, "", "low_vol_uptrend", n=4)
+
+    if result.analogues:
+        expected_avg = round(sum(a.return_5d for a in result.analogues) / len(result.analogues), 2)
+        assert abs(result.avg_5d_return - expected_avg) < 0.01
+
+        expected_wr = round(
+            sum(1 for a in result.analogues if a.return_5d > 0) / len(result.analogues) * 100, 1
+        )
+        assert abs(result.win_rate - expected_wr) < 0.1
 
 
 # ── /api/news ─────────────────────────────────────────────────────────────────
