@@ -829,23 +829,30 @@ export default function App() {
                   BL Prior → Copula Correction → Regime Weights → Entropy Adjustment → Kelly Sizing
                 </div>
 
-                {/* Summary strip */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", margin: "12px 0 6px" }}>
-                  <span style={{ fontSize: 9, color: T.textSec, textTransform: "uppercase", letterSpacing: "0.8px", fontWeight: 600 }}>Agent Summary</span>
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8, color: T.textMuted }}>R3 FINAL</span>
-                </div>
-                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                {/* Agent Summary — compact one-liner per agent */}
+                <div style={{ margin: "12px 0 16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                    <span style={{ fontSize: 9, color: T.textSec, textTransform: "uppercase", letterSpacing: "0.8px", fontWeight: 600 }}>Agent Summary</span>
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8, color: T.textMuted }}>R3 FINAL</span>
+                  </div>
                   {AGENT_PERSONAS.map((a, i) => {
                     const f = simulation[2][i];
-                    const sc = dirColor(f.direction);
+                    const sc = f.status === "ok" ? dirColor(f.direction) : T.textMuted;
+                    const confPct = f.status === "ok" ? Math.round(f.confidence * 100) : 0;
+                    const oneLiner = f.status === "ok" ? f.reasoning.split(". ")[0] : "Unavailable";
                     return (
-                      <div key={i} className={`fade-d${i}`} style={{
-                        flex: 1, background: T.bg3, border: `1px solid ${T.border}`, borderTop: `2px solid ${sc}`,
-                        borderRadius: 6, padding: "8px 10px", transition: "all 180ms ease", minWidth: 0,
+                      <div key={i} style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "5px 0",
+                        borderBottom: `1px solid ${T.border}`, fontSize: 10,
                       }}>
-                        <div style={{ fontSize: 9, color: T.textSec, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
-                        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: sc, fontWeight: 600, marginBottom: 4 }}>{dirSym(f.direction)} {f.direction.charAt(0).toUpperCase() + f.direction.slice(1)}</div>
-                        <div style={{ fontSize: 8.5, color: T.textMuted, lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{f.reasoning.split(". ")[0]}</div>
+                        <span style={{ width: 100, color: T.textSec, fontSize: 9, flexShrink: 0 }}>{a.name.split(" ")[0]}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono',monospace", width: 70, color: sc, fontWeight: 600, flexShrink: 0 }}>
+                          {f.status === "ok" ? `${dirSym(f.direction)} ${f.direction.charAt(0).toUpperCase() + f.direction.slice(1)}` : "—"}
+                        </span>
+                        <span style={{ fontFamily: "'JetBrains Mono',monospace", width: 30, color: T.textSec, flexShrink: 0 }}>{confPct}%</span>
+                        <span style={{ color: T.textMuted, fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                          {oneLiner}
+                        </span>
                       </div>
                     );
                   })}

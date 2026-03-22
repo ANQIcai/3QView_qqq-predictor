@@ -19,11 +19,11 @@ ROUND_MODELS = {
     3: "claude-sonnet-4-6",           # R3: high-quality final position
 }
 # R1/R2 brief initial takes; R3 full detailed reasoning.
-# 700 prevents incomplete tool input from Quant Modeler (verbose statistical output).
+# 1000 for R3 gives Quant Modeler/Momentum Analyst enough room for verbose statistical output.
 ROUND_MAX_TOKENS = {
     1: 400,
     2: 400,
-    3: 700,
+    3: 1000,
 }
 
 _KNOWLEDGE_DIR = Path(__file__).parent / "agents_knowledge"
@@ -300,7 +300,9 @@ def _call_agent(
             messages.append({"role": "assistant", "content": "Understood."})
 
     format_reminder = (
-        "\n\nIMPORTANT: You MUST end your response with a JSON block in exactly this format:\n"
+        "\n\nREMINDER: You MUST return a valid JSON response with direction, confidence, "
+        "target_low, target_high, and reasoning fields. Do this FIRST before any other analysis.\n\n"
+        "IMPORTANT: You MUST end your response with a JSON block in exactly this format:\n"
         '{"direction": "bullish"|"bearish"|"neutral", "confidence": 0.0-1.0, '
         '"target_low": NUMBER, "target_high": NUMBER, "reasoning": "one sentence summary"}'
     )
