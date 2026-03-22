@@ -31,13 +31,15 @@ logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List
 
 import data as data_mod
 import indicators as ind_mod
 import analogues as ana_mod
 import news as news_mod
 import live_data as ld_mod
-from agents import run_simulation
+from agents import run_simulation, AGENT_PERSONAS
 
 app = FastAPI(title="OracleQQQ API")
 
@@ -47,6 +49,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Request models ────────────────────────────────────────────────────────────
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class AgentChatRequest(BaseModel):
+    agent_name: str
+    messages: List[ChatMessage]
+    forecast_direction: str
+    forecast_confidence: float
+    forecast_target_low: float
+    forecast_target_high: float
+    forecast_reasoning: str
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -279,3 +297,36 @@ def predict():
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e), "rounds": [], "consensus": {}}
+
+
+@app.post("/api/agent-chat")
+def agent_chat(req: AgentChatRequest):
+    """Ask a specific agent about its reasoning. Routes through backend so API key stays server-side."""
+    from anthropic import Anthropic
+    client = Anthropic()
+
+    persona = AGENT_PERSONAS.get(req.agent_name)
+    if not persona:
+        raise HTTPException(status_code=400, detail=f"Unknown agent: {req.agent_name}")
+
+    system = persona["system"]
+    system += (
+        f"\n\nYour current forecast: {req.forecast_direction} with "
+        f"{req.forecast_confidence:.0%} confidence, target "
+        f"${req.forecast_target_low:.0f}–${req.forecast_target_high:.0f}. "
+        f"Reasoning: {req.forecast_reasoning}\n\n"
+        "Answer concisely in 2-3 sentences. Be specific about data and indicators."
+    )
+
+    messages = [{"role": m.role, "content": m.content} for m in req.messages]
+
+    try:
+        resp = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=300,
+            system=system,
+            messages=messages,
+        )
+        return {"response": resp.content[0].text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

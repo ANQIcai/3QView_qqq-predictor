@@ -478,23 +478,24 @@ const AskAgent = ({ simulation, agents }) => {
     setLoading(true);
 
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      const resp = await fetch("/api/agent-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `You are ${agent.name}, a financial analyst specializing in ${agent.role}. Your current forecast for QQQ is ${forecast.direction} with ${Math.round(forecast.confidence * 100)}% confidence, target range $${forecast.target_low.toFixed(0)}-$${forecast.target_high.toFixed(0)}. Reasoning: "${forecast.reasoning}". Answer concisely in 2-3 sentences. Be specific about data and indicators.`,
-          messages: [
-            ...newChat.filter(m => m.role === "user" || m.role === "assistant").map(m => ({ role: m.role, content: m.content })),
-          ],
+          agent_name: agent.name,
+          messages: newChat,
+          forecast_direction: forecast.direction,
+          forecast_confidence: forecast.confidence,
+          forecast_target_low: forecast.target_low,
+          forecast_target_high: forecast.target_high,
+          forecast_reasoning: forecast.reasoning,
         }),
       });
       const data = await resp.json();
-      const answer = data.content?.map(c => c.text || "").join("") || "Agent unavailable.";
+      const answer = data.response || "Agent unavailable.";
       setMessages(prev => ({ ...prev, [chatKey]: [...(prev[chatKey] || []), { role: "assistant", content: answer }] }));
     } catch {
-      setMessages(prev => ({ ...prev, [chatKey]: [...(prev[chatKey] || []), { role: "assistant", content: "⚠ Agent unavailable — try again." }] }));
+      setMessages(prev => ({ ...prev, [chatKey]: [...(prev[chatKey] || []), { role: "assistant", content: "⚠ Connection error — try again." }] }));
     }
     setLoading(false);
   };
@@ -514,21 +515,15 @@ const AskAgent = ({ simulation, agents }) => {
         ))}
       </div>
 
-      {/* Stance card */}
-      <div style={{ background: T.bg3, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", marginBottom: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 600, color: accent }}>
-              {dirSym(forecast.direction)} {forecast.direction.charAt(0).toUpperCase() + forecast.direction.slice(1)}
-            </span>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: T.textSec }}>{Math.round(forecast.confidence * 100)}%</span>
-          </div>
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: T.text }}>${forecast.target_low.toFixed(0)}–${forecast.target_high.toFixed(0)}</span>
+      {/* Compact agent stance — one line */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", marginBottom: 8, borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 600, color: accent }}>
+            {dirSym(forecast.direction)} {forecast.direction.charAt(0).toUpperCase() + forecast.direction.slice(1)}
+          </span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: T.textSec }}>{Math.round(forecast.confidence * 100)}%</span>
         </div>
-        <div style={{ height: 3, background: T.border, borderRadius: 2, marginBottom: 8 }}>
-          <div style={{ height: "100%", width: `${Math.round(forecast.confidence * 100)}%`, background: accent, borderRadius: 2 }} />
-        </div>
-        <div style={{ fontSize: 10, color: "#8b949e", lineHeight: 1.5, borderLeft: `2px solid ${accent}`, paddingLeft: 8 }}>{forecast.reasoning}</div>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: T.text }}>${forecast.target_low.toFixed(0)}–${forecast.target_high.toFixed(0)}</span>
       </div>
 
       {/* Chat */}
