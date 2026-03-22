@@ -14,8 +14,9 @@ client = anthropic.Anthropic()
 MODEL = "claude-sonnet-4-6"
 # Rounds 1 & 2 get fewer tokens (faster, still sufficient for 2-3 sentence reasoning).
 # Round 3 gets the full budget for final committed forecast.
-MAX_TOKENS_R1R2 = 500
-MAX_TOKENS_R3 = 600
+# 800/1000 prevents incomplete tool input from Quant Modeler (verbose statistical output).
+MAX_TOKENS_R1R2 = 800
+MAX_TOKENS_R3 = 1000
 
 _KNOWLEDGE_DIR = Path(__file__).parent / "agents_knowledge"
 _KNOWLEDGE_FILES = {
@@ -289,7 +290,13 @@ def _call_agent(
         messages.append(msg)
         if msg["role"] == "user":
             messages.append({"role": "assistant", "content": "Understood."})
-    messages.append({"role": "user", "content": context})
+
+    format_reminder = (
+        "\n\nIMPORTANT: You MUST end your response with a JSON block in exactly this format:\n"
+        '{"direction": "bullish"|"bearish"|"neutral", "confidence": 0.0-1.0, '
+        '"target_low": NUMBER, "target_high": NUMBER, "reasoning": "one sentence summary"}'
+    )
+    messages.append({"role": "user", "content": context + format_reminder})
 
     try:
         for attempt in range(4):
