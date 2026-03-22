@@ -850,7 +850,7 @@ export default function App() {
                           {f.status === "ok" ? `${dirSym(f.direction)} ${f.direction.charAt(0).toUpperCase() + f.direction.slice(1)}` : "—"}
                         </span>
                         <span style={{ fontFamily: "'JetBrains Mono',monospace", width: 30, color: T.textSec, flexShrink: 0 }}>{confPct}%</span>
-                        <span style={{ color: T.textMuted, fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                        <span style={{ color: T.textMuted, fontSize: 9, flex: 1, lineHeight: 1.4 }}>
                           {oneLiner}
                         </span>
                       </div>
