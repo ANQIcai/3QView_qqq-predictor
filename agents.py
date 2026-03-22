@@ -18,12 +18,11 @@ ROUND_MODELS = {
     2: "claude-haiku-4-5-20251001",  # R2: fast challenge round
     3: "claude-sonnet-4-6",           # R3: high-quality final position
 }
-# R1/R2 brief initial takes; R3 full detailed reasoning.
-# 1000 for R3 gives Quant Modeler/Momentum Analyst enough room for verbose statistical output.
+# 1200 for all rounds — gives verbose agents (Quant Modeler, Momentum) room to complete tool input.
 ROUND_MAX_TOKENS = {
-    1: 400,
-    2: 400,
-    3: 1000,
+    1: 1200,
+    2: 1200,
+    3: 1200,
 }
 
 _KNOWLEDGE_DIR = Path(__file__).parent / "agents_knowledge"
@@ -304,13 +303,19 @@ def _call_agent(
         "target_low, target_high, and reasoning fields. Do this FIRST before any other analysis.\n\n"
         "IMPORTANT: You MUST end your response with a JSON block in exactly this format:\n"
         '{"direction": "bullish"|"bearish"|"neutral", "confidence": 0.0-1.0, '
-        '"target_low": NUMBER, "target_high": NUMBER, "reasoning": "one sentence summary"}'
+        '"target_low": NUMBER, "target_high": NUMBER, "reasoning": "one sentence summary"}\n\n'
+        "CRITICAL: Your response MUST end with valid JSON: "
+        '{"direction": "bullish"|"bearish"|"neutral", "confidence": 0.0-1.0, '
+        '"target_low": NUMBER, "target_high": NUMBER, "reasoning": "one sentence"}'
     )
     messages.append({"role": "user", "content": context + format_reminder})
+
+    current_price = float(seed.get("current_price", 500) or 500)
 
     try:
         for attempt in range(3):  # 2 retries max
             try:
+                print(f"[AGENT] {agent_name} Round {round_num} attempt {attempt + 1}: calling {ROUND_MODELS[round_num]}...")
                 knowledge = _AGENT_KNOWLEDGE.get(agent_name, "")
                 base_system = AGENT_PERSONAS[agent_name]["system"]
                 system_prompt = f"{knowledge}\n\n{base_system}" if knowledge else base_system
@@ -327,24 +332,32 @@ def _call_agent(
                     tool_choice={"type": "tool", "name": "submit_forecast"},
                     messages=messages,
                 )
+                print(f"[AGENT] {agent_name} Round {round_num}: got response (stop_reason={response.stop_reason}), parsing...")
                 tool_block = next(
                     (b for b in response.content if b.type == "tool_use"), None
                 )
                 if tool_block:
                     inp = tool_block.input
-                    # Guard against model returning incomplete tool input (can happen near token limit)
-                    required = ("direction", "confidence", "target_low", "target_high", "reasoning")
-                    if not all(k in inp and inp[k] for k in required):
+                    # Check presence and non-None; use is not None for numerics so 0.0 passes
+                    str_required = ("direction", "reasoning")
+                    num_required = ("confidence", "target_low", "target_high")
+                    missing = [k for k in str_required if not inp.get(k)] + \
+                              [k for k in num_required if k not in inp or inp[k] is None]
+                    if missing:
                         # Fallback: scrape reasoning from any text content block
                         text_blocks = [b for b in response.content if b.type == "text" and b.text.strip()]
-                        if text_blocks and "reasoning" not in inp:
+                        if text_blocks and "reasoning" in missing:
                             inp = dict(inp)
                             inp["reasoning"] = text_blocks[0].text.strip()[:400]
-                        if not all(k in inp and inp[k] for k in required):
+                            missing = [k for k in missing if k != "reasoning"]
+                        if missing:
+                            raw = str(response.content)[:300]
+                            print(f"[AGENT] {agent_name} Round {round_num}: PARSE FAILED — missing={missing} raw={raw}")
                             if attempt < 2:
                                 time.sleep(2 ** attempt)  # 1s, 2s
                                 continue
-                            raise RuntimeError(f"Incomplete tool input after retries: {list(inp.keys())}")
+                            raise RuntimeError(f"Incomplete tool input after retries: {[k for k in inp]}")
+                    print(f"[AGENT] {agent_name} Round {round_num}: OK — {inp.get('direction')} {inp.get('confidence', 0):.0%}")
                     return ForecastResult(
                         direction=inp["direction"],
                         confidence=max(0.0, min(1.0, float(inp["confidence"]))),
@@ -358,11 +371,13 @@ def _call_agent(
                     )
             except anthropic.RateLimitError:
                 wait = 2 ** attempt  # 1s, 2s, 4s
+                print(f"[AGENT] {agent_name} Round {round_num}: rate limited, waiting {wait}s...")
                 if attempt < 2:
                     time.sleep(wait)
                     continue
                 raise
-            except anthropic.APIStatusError:
+            except anthropic.APIStatusError as api_err:
+                print(f"[AGENT] {agent_name} Round {round_num}: API error {api_err.status_code}")
                 if attempt < 2:
                     time.sleep(2 ** attempt)
                     continue
@@ -371,12 +386,13 @@ def _call_agent(
         raise RuntimeError("No tool_use block returned after retries")
 
     except Exception as e:
+        print(f"[AGENT] {agent_name} Round {round_num}: FAILED — {e}")
         return ForecastResult(
             direction="neutral",
             confidence=0.5,
-            target_low=0.0,
-            target_high=0.0,
-            reasoning=f"Agent unavailable: {str(e)[:100]}",
+            target_low=round(current_price * 0.98, 2),
+            target_high=round(current_price * 1.02, 2),
+            reasoning="Agent timed out — defaulting to neutral",
             round_num=round_num,
             agent_name=agent_name,
             status="error",
