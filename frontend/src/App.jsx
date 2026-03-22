@@ -885,8 +885,7 @@ export default function App() {
           </div>
 
           {/* ── RIGHT COLUMN ──────────────────────────────── */}
-          <div style={{ width: 300, minWidth: 300, borderLeft: `1px solid ${T.border}`, overflowY: "auto", padding: "20px 16px", scrollbarWidth: "thin", scrollbarColor: `${T.borderHover} transparent` }}>
-            <div style={{ height: 30 }} />
+          <div style={{ width: 300, minWidth: 300, borderLeft: `1px solid ${T.border}`, overflowY: "auto", padding: "0px 16px", scrollbarWidth: "thin", scrollbarColor: `${T.borderHover} transparent` }}>
             <SectionHeader>
               <MessageSquare size={12} /> Ask an Agent
             </SectionHeader>
