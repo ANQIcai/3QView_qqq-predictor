@@ -449,6 +449,12 @@ const AskAgent = ({ simulation, agents }) => {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
 
+  // All hooks must be declared before any conditional return.
+  // Use `selected` (not `chatKey`) as dep since chatKey is derived post-guard.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, selected]);
+
   if (!simulation) {
     return (
       <div style={{ fontSize: 10, color: T.textMuted, padding: "20px 0", textAlign: "center" }}>
@@ -492,10 +498,6 @@ const AskAgent = ({ simulation, agents }) => {
     }
     setLoading(false);
   };
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, chatKey]);
 
   return (
     <div>
