@@ -11,12 +11,20 @@ from concurrent.futures import ThreadPoolExecutor
 from consensus import aggregate_forecasts
 
 client = anthropic.Anthropic()
-MODEL = "claude-sonnet-4-6"
-# Rounds 1 & 2 get fewer tokens (faster, still sufficient for 2-3 sentence reasoning).
-# Round 3 gets the full budget for final committed forecast.
-# 800/1000 prevents incomplete tool input from Quant Modeler (verbose statistical output).
-MAX_TOKENS_R1R2 = 800
-MAX_TOKENS_R3 = 1000
+
+# Haiku for exploratory rounds (1-3s vs 8-15s for Sonnet), Sonnet only for final positions.
+ROUND_MODELS = {
+    1: "claude-haiku-4-5-20251001",  # R1: fast initial analysis
+    2: "claude-haiku-4-5-20251001",  # R2: fast challenge round
+    3: "claude-sonnet-4-6",           # R3: high-quality final position
+}
+# R1/R2 brief initial takes; R3 full detailed reasoning.
+# 700 prevents incomplete tool input from Quant Modeler (verbose statistical output).
+ROUND_MAX_TOKENS = {
+    1: 400,
+    2: 400,
+    3: 700,
+}
 
 _KNOWLEDGE_DIR = Path(__file__).parent / "agents_knowledge"
 _KNOWLEDGE_FILES = {
@@ -299,7 +307,7 @@ def _call_agent(
     messages.append({"role": "user", "content": context + format_reminder})
 
     try:
-        for attempt in range(4):
+        for attempt in range(3):  # 2 retries max
             try:
                 knowledge = _AGENT_KNOWLEDGE.get(agent_name, "")
                 base_system = AGENT_PERSONAS[agent_name]["system"]
@@ -310,8 +318,8 @@ def _call_agent(
                     "bearish analogues, and why this time might differ."
                 )
                 response = client.messages.create(
-                    model=MODEL,
-                    max_tokens=MAX_TOKENS_R3 if round_num == 3 else MAX_TOKENS_R1R2,
+                    model=ROUND_MODELS[round_num],
+                    max_tokens=ROUND_MAX_TOKENS[round_num],
                     system=system_prompt,
                     tools=[FORECAST_TOOL],
                     tool_choice={"type": "tool", "name": "submit_forecast"},
@@ -331,8 +339,8 @@ def _call_agent(
                             inp = dict(inp)
                             inp["reasoning"] = text_blocks[0].text.strip()[:400]
                         if not all(k in inp and inp[k] for k in required):
-                            if attempt < 3:
-                                time.sleep(2 ** attempt)
+                            if attempt < 2:
+                                time.sleep(2 ** attempt)  # 1s, 2s
                                 continue
                             raise RuntimeError(f"Incomplete tool input after retries: {list(inp.keys())}")
                     return ForecastResult(
@@ -347,13 +355,13 @@ def _call_agent(
                         status="ok",
                     )
             except anthropic.RateLimitError:
-                wait = 2 * (2 ** attempt)  # 2s, 4s, 8s
-                if attempt < 3:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                if attempt < 2:
                     time.sleep(wait)
                     continue
                 raise
             except anthropic.APIStatusError:
-                if attempt < 3:
+                if attempt < 2:
                     time.sleep(2 ** attempt)
                     continue
                 raise
