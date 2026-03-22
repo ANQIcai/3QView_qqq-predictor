@@ -1,4 +1,4 @@
-# Oracle3Q — Multi-Agent AI QQQ Predictor
+# 3QView — Multi-Agent AI QQQ Predictor
 
 React + FastAPI. Five Claude-powered analyst agents debate QQQ's 5-day direction across 3 rounds.
 
@@ -17,7 +17,7 @@ React + FastAPI. Five Claude-powered analyst agents debate QQQ's 5-day direction
 ```bash
 # 1. Clone
 git clone https://github.com/ANQIcai/Oracle3Q_qqq-predictor.git
-cd Oracle3Q_qqq-predictor
+cd Oracle3Q_qqq-predictor  # repo name unchanged
 
 # 2. Python deps
 pip install -r requirements.txt
@@ -34,7 +34,7 @@ uvicorn api:app --host 0.0.0.0 --port 8000
 cd frontend
 npm install
 npm run dev
-# Open http://localhost:5173
+# Open http://localhost:3000
 ```
 
 ## API Endpoints

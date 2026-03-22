@@ -731,7 +731,7 @@ export default function App() {
           borderBottom: `1px solid ${T.border}`, padding: "10px 20px",
           display: "flex", alignItems: "center", gap: 14, fontSize: 11, flexShrink: 0,
         }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Oracle<span style={{ color: T.bull }}>QQQ</span></span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>3Q<span style={{ color: T.bull }}>View</span></span>
           <span style={{ width: 1, height: 16, background: T.border, opacity: 0.6 }} />
           <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, color: T.text }}>{TICKER}</span>
           <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, color: tbColor }}>{CURRENT_PRICE.toFixed(2)}</span>
