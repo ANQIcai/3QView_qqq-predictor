@@ -69,3 +69,4 @@ FastAPI (localhost:8000)
 
 - `/api/predict` takes 60–120 seconds (15 Claude API calls). The React frontend uses a 3-minute AbortController timeout.
 - Both the Streamlit app (`app.py`) and FastAPI backend can run simultaneously — each uses its own in-process cache.
+
